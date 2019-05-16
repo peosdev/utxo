@@ -1,0 +1,19 @@
+{
+  "name": "cmd",
+  "version": "0.1.0",
+  "description": "UTXO cmd line tool",
+  "main": "cmd.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "bluebird": "^3.5.4",
+    "commander": "^2.20.0",
+    "conf": "^4.0.2",
+    "eosjs": "16.0.9",
+    "read": "^1.0.7",
+    "request": "^2.87.0"
+  }
+}

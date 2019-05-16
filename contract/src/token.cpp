@@ -259,6 +259,106 @@ void token::close(name owner, const symbol &symbol)
    acnts.erase(it);
 }
 
+#pragma pack(push,1)
+struct sign_data {
+   uint64_t id;
+   checksum256 outputsDigest;
+};
+#pragma pack(pop)
+
+void token::transferutxo(const name &payer, const std::vector<input> &inputs, const std::vector<output> &outputs) 
+{
+   utxos utxostable(_self, _self.value);
+   require_auth(payer);
+
+   auto p = pack(outputs);
+   checksum256 outputsDigest = sha256(&p[0], p.size());
+
+   asset inputSum = asset(0, PEOS_SYMBOL);
+   for(auto in = inputs.cbegin() ; in != inputs.cend() ; ++in) {
+      sign_data sd = {in->id, outputsDigest};
+      checksum256 digest = sha256((const char *)&sd, sizeof(sign_data));
+
+      auto utxo = utxostable.find(in->id);
+      check(utxo != utxostable.end(), "Unknown UTXO");
+      assert_recover_key(digest, in->sig, utxo->pk);
+      inputSum += utxo->amount;
+
+      utxostable.erase(utxo);
+   }
+
+   asset outputSum = asset(0, PEOS_SYMBOL);
+   for(auto oIter = outputs.cbegin() ; oIter != outputs.cend() ; ++oIter) {
+      auto q = oIter->quantity;
+      check(q.is_valid(), "Invalid asset");
+      check(q.symbol == PEOS_SYMBOL, "Symbol precision mismatch");
+      check(q.amount > 0, "Output amount must be positive");
+      outputSum += q;
+
+      if (oIter->account.value != 0) 
+      {  
+         SEND_INLINE_ACTION(*this, transfer, {{_self, "active"_n}}, {_self, oIter->account, q, ""});
+      } 
+      else 
+      {
+         utxostable.emplace(payer, [&](auto &u){
+            u.id = getNextUTXOId();
+            u.pk = oIter->pk;
+            u.amount = q;
+         });
+      }
+   }
+
+   check(inputSum >= outputSum, "Inputs don't cover outputs");
+}
+
+void token::loadutxo(const name &from, const public_key &pk, const asset &quantity) 
+{
+   require_auth(from);
+
+   auto sym = quantity.symbol;
+   check(sym.is_valid(), "invalid symbol name");
+
+   stats statstable(_self, sym.code().raw());
+   auto existing = statstable.find(sym.code().raw());
+   check(existing != statstable.end(), "token with symbol does not exist");
+   const auto &st = *existing;
+
+   SEND_INLINE_ACTION(*this, transfer, {{from, "active"_n}}, {from, st.issuer, quantity, ""});
+
+   utxos utxostable(_self, _self.value);
+
+   utxostable.emplace(from, [&](auto &u){
+      u.id = getNextUTXOId();
+      u.pk = pk;
+      u.amount = quantity;
+   });
+}
+
+uint64_t token::getNextUTXOId() 
+{
+   utxo_globals globals(_self, _self.value);
+
+   uint64_t ret = 0;
+
+   auto const &it = globals.find(0);
+   if (it == globals.end()) 
+   {
+      globals.emplace(_self, [&](auto &g){
+         g.next_pk = 1;
+      });
+   }
+   else 
+   {
+      globals.modify(it, same_payer, [&](auto &g){
+         ret = g.next_pk;
+         g.next_pk += 1;
+      });
+   }
+
+   return ret;
+}
+
 } // namespace eosio
 
-EOSIO_DISPATCH(eosio::token, (create)(update)(issue)(transfer)(claim)(recover)(retire)(close))
+EOSIO_DISPATCH(eosio::token, (create)(update)(issue)(transfer)(claim)(recover)(retire)(close)(transferutxo)(loadutxo))
