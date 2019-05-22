@@ -2,7 +2,7 @@
 module.exports = {
 
     eos_conn_info : {
-        httpEndpoint: 'https://jungle2.cryptolions.io',
+        httpEndpoint: 'https://eos.greymass.com',
         chainId: 'e70aaab8997e1dfce58fbfac80cbbb8fecec7b99cf982a9444273cbc64c41473',
 
         keyProvider : [],
