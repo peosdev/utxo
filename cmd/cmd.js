@@ -614,7 +614,7 @@ async function getAllAccounts(cmd) {
             }
             let balance = await getCurrencyBalance(code, account, symbol)
             if (balance.length == 0) {
-                continue
+                balance.push(`0.0000 ${symbol}`)
             }
             let amount = parseFloat(balance[0].split(' ')[0])
             sum += amount
