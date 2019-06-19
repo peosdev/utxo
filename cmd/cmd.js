@@ -9,6 +9,8 @@ const request = require('request');
 const Promise = require('bluebird')
 const Conf = require('conf');
 
+const express = require('express')
+
 
 Config.wallet_URL = Config.wallet_URL.replace('~', process.env.HOME);
 
@@ -577,6 +579,63 @@ async function relayAction(auth, action) {
         })
 }
 
+async function serveRelayAction(auth) {
+    if (!auth) {
+        console.error("ERROR: No authenticating EOS account.")
+        return
+    }
+
+    await init();
+
+    let key = await getActiveKey(auth)
+    if (!key) {
+        console.error("ERROR: Can't find key for account:", auth)
+        //return
+    }
+    Config.active_public_key = key
+
+    const app = express()
+
+    app.use(function(req, res, next) {
+        res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept")
+        res.header("Access-Control-Allow-Origin", "*")
+        next();
+    });
+
+    app.post('/relay', async (req, res) => {
+        const msg = req.body
+        const action = msg.action
+
+        let actionJson
+
+        try {
+            actionJson = JSON.parse(action)
+            actionJson.data.payer = auth
+            actionJson.authorization[0].actor = auth    
+        } catch (err) {
+            console.error('ERROR: Action not valid: ', err.message)
+            return
+        }
+
+        await eos.transaction({ actions: [actionJson] })
+        .then(async (ret) => {
+            console.log('Transfer success (Id: ' + ret.transaction_id + ' )')
+        })
+        .catch((err) => {
+            console.log('ERROR: transfer failed:', err)
+        })
+
+
+    })
+
+    const port = 8080
+
+    app.listen(port, (e) => {
+        if (e) console.error(e)
+        else console.log(`Server listening on port ${port}...`)
+    });
+}
+
 async function tranferAction(from, to, amount, cmd) {
     if (from === 'utxo') {
         await transferutxo(to, amount, cmd)
@@ -668,6 +727,10 @@ async function _main() {
     program
     .command('relay <auth> <action>')
     .action(relayAction)
+
+    program
+    .command('serve <auth>')
+    .action(serveRelayAction)
 
     program
     .command('set <variable> <value>')

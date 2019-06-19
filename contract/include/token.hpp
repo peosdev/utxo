@@ -58,7 +58,7 @@ class[[eosio::contract("token")]] token : public contract
       asset quantity;
    };
 
-   [[eosio::action]] void transferutxo(const name &payer, const std::vector<input> &inputs, const std::vector<output> &outputs);
+   [[eosio::action]] void transferutxo(const name &payer, const std::vector<input> &inputs, const std::vector<output> &outputs, const string &memo);
    [[eosio::action]] void loadutxo(const name &from, const public_key &pk, const asset &quantity);
 
    static asset get_supply(name token_contract_account, symbol_code sym_code)
