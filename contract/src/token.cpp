@@ -311,7 +311,7 @@ void token::transferutxo(const name &payer, const std::vector<input> &inputs, co
 
    check(inputSum >= outputSum, "Inputs don't cover outputs");
 
-   asset fees = outputSum - inputSum;
+   asset fees = inputSum - outputSum;
    if (fees.amount > 0) 
    {  
       SEND_INLINE_ACTION(*this, transfer, {{_self, "active"_n}}, {_self, payer, fees, ""});
