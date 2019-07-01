@@ -241,7 +241,7 @@ function makeVerifyActions(account_name, signatures) {
     return actions;
 }
 
-function makeTransferAction(account_name, inputs, outputs) {
+function makeTransferAction(account_name, inputs, outputs, memo) {
     let action = {
         account: Config.contract_info.code,
         name: 'transferutxo',
@@ -249,7 +249,7 @@ function makeTransferAction(account_name, inputs, outputs) {
             payer: account_name,
             inputs,
             outputs,
-            memo: ''
+            memo
         },
         authorization: [{
             actor: account_name,
@@ -452,6 +452,8 @@ async function transferutxo(to, amount, cmd) {
         return
     }
 
+    let memo = cmd.memo || ''
+
     await init();
 
     if (to === 'new') {
@@ -517,7 +519,7 @@ async function transferutxo(to, amount, cmd) {
     
     console.assert(change >= 0, "Negative change! " + change)
 
-    let tranferAction = makeTransferAction(cmd.auth || '', utxoIds, outputs)
+    let tranferAction = makeTransferAction(cmd.auth || '', utxoIds, outputs, memo)
 
     if (cmd.auth) {
         let key = await getActiveKey(cmd.auth)
@@ -722,6 +724,7 @@ async function _main() {
     .command('transfer <from> <to> <amount>')
     .option('-a, --auth <account>', 'Authenticating EOS account')
     .option('-s, --save', 'Save the transaction for later relay')
+    .option('-m, --memo <memo>', 'Memo for when sending to accounts')
     .action(tranferAction)
 
     program
