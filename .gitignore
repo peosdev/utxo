@@ -1,4 +1,5 @@
 .vscode
+cmd/clpeosconfig.json
 cmd/node_modules
 contract/build/*
 envs/*

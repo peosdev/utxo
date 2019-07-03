@@ -1,16 +1,18 @@
 #!/usr/bin/env node
 
-const program = require('commander');
-const Eos     = require('eosjs');
+const program = require('commander')
+const Eos     = require('eosjs')
 const { PublicKey , sha256 } = require('eosjs-ecc')
-const Config  = require('./config');
-const read    = require('read');
-const request = require('request');
+const Config  = require('./config')
+const read    = require('read')
+const request = require('request')
 const Promise = require('bluebird')
+const bip39   = require('bip39')
 const Conf = require('conf');
 
 const express = require('express')
 
+const hdwallet = require('./wallet')
 
 Config.wallet_URL = Config.wallet_URL.replace('~', process.env.HOME);
 
@@ -21,9 +23,16 @@ const config = new Conf({
         wallet_name: {
             type: 'string',
             default: ''
+        },
+        wallet_hd_index: {
+            type: 'integer',
+            default: 0
         }
     }
 });
+
+let seed = bip39.mnemonicToSeedSync('send invoice')
+hdwallet.initFromMasterSeed(config, seed)
 
 function getChainInfo() {
     return new Promise((resolve, reject) => {
@@ -198,6 +207,14 @@ async function signDigest(digest, key) {
     })
 }
 
+const cleos_wallet = {
+    getWalletKeyList,
+    createKey,
+    signDigest
+}
+// let wallet = cleos_wallet
+let wallet = hdwallet
+
 async function makeTransactionHeader(expireInSeconds, callback) {
     let info = await eos.getInfo({});
     chainDate = new Date(info.head_block_time + 'Z')
@@ -341,7 +358,7 @@ async function getUTXOsForKey(pk) {
 }
 
 async function getOwnedUTXOs() {
-    let keys = await getWalletKeyList();
+    let keys = await wallet.getWalletKeyList();
 
     let utxos = []
 
@@ -408,7 +425,7 @@ async function loadutxo(from, to, amount) {
 
     if (to === 'new') {
         try {
-            to = await createKey()
+            to = await wallet.createKey()
             console.log(`Generated new key ${to}`)
         } catch (err) {
             console.error('ERROR: Failed to generate new key. (locked wallet?)')
@@ -458,7 +475,7 @@ async function transferutxo(to, amount, cmd) {
 
     if (to === 'new') {
         try {
-            to = await createKey()
+            to = await wallet.createKey()
             console.log(`Generated new key ${to}`)
         } catch (err) {
             console.error('ERROR: Failed to generate new key. (locked wallet?)')
@@ -485,7 +502,7 @@ async function transferutxo(to, amount, cmd) {
     let change = ret[1] - amountNum
 
     if (change > 0) {
-        let changeAddress = await createKey()
+        let changeAddress = await wallet.createKey()
         outputs.push({ pk:changeAddress, account:"", quantity: `${change.toFixed(4)} PEOS` })
     }
 
@@ -509,7 +526,7 @@ async function transferutxo(to, amount, cmd) {
         let buf = Buffer.concat([int2le(u.id), outputDigest])
         let digest = sha256(buf)
 
-        let sig = await signDigest(digest, u.pk)
+        let sig = await wallet.signDigest(digest, u.pk)
         
         utxoIds.push({
             id: u.id,
@@ -648,7 +665,7 @@ async function tranferAction(from, to, amount, cmd) {
 
 async function getReceiveKey(cmd) {
     if(cmd.reuse) {
-        let keys = await getWalletKeyList();
+        let keys = await wallet.getWalletKeyList();
 
         for(let key of keys) {
             if((await getUTXOsForKey(key)).length === 0) {
@@ -657,7 +674,7 @@ async function getReceiveKey(cmd) {
         }
     }
 
-    return await createKey()
+    return await wallet.createKey()
 }
 
 async function getAllAccounts(cmd) {
