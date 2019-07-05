@@ -9,10 +9,13 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "bip39": "^3.0.2",
     "bluebird": "^3.5.4",
     "commander": "^2.20.0",
     "conf": "^4.0.2",
     "eosjs": "16.0.9",
+    "express": "^4.17.0",
+    "hdkey": "^1.1.1",
     "read": "^1.0.7",
     "request": "^2.87.0"
   }

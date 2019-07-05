@@ -266,7 +266,7 @@ struct sign_data {
 };
 #pragma pack(pop)
 
-void token::transferutxo(const name &payer, const std::vector<input> &inputs, const std::vector<output> &outputs) 
+void token::transferutxo(const name &payer, const std::vector<input> &inputs, const std::vector<output> &outputs, const string &memo) 
 {
    utxos utxostable(_self, _self.value);
    require_auth(payer);
@@ -297,7 +297,7 @@ void token::transferutxo(const name &payer, const std::vector<input> &inputs, co
 
       if (oIter->account.value != 0) 
       {  
-         SEND_INLINE_ACTION(*this, transfer, {{_self, "active"_n}}, {_self, oIter->account, q, ""});
+         SEND_INLINE_ACTION(*this, transfer, {{_self, "active"_n}}, {_self, oIter->account, q, memo});
       } 
       else 
       {
@@ -310,6 +310,12 @@ void token::transferutxo(const name &payer, const std::vector<input> &inputs, co
    }
 
    check(inputSum >= outputSum, "Inputs don't cover outputs");
+
+   asset fees = inputSum - outputSum;
+   if (fees.amount > 0) 
+   {  
+      SEND_INLINE_ACTION(*this, transfer, {{_self, "active"_n}}, {_self, payer, fees, ""});
+   }
 }
 
 void token::loadutxo(const name &from, const public_key &pk, const asset &quantity) 

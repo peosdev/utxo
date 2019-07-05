@@ -1,14 +1,18 @@
 #!/usr/bin/env node
 
-const program = require('commander');
-const Eos     = require('eosjs');
+const program = require('commander')
+const Eos     = require('eosjs')
 const { PublicKey , sha256 } = require('eosjs-ecc')
-const Config  = require('./config');
-const read    = require('read');
-const request = require('request');
+const Config  = require('./config')
+const read    = require('read')
+const request = require('request')
 const Promise = require('bluebird')
+const bip39   = require('bip39')
 const Conf = require('conf');
 
+const express = require('express')
+
+const hdwallet = require('./wallet')
 
 Config.wallet_URL = Config.wallet_URL.replace('~', process.env.HOME);
 
@@ -19,9 +23,16 @@ const config = new Conf({
         wallet_name: {
             type: 'string',
             default: ''
+        },
+        wallet_hd_index: {
+            type: 'integer',
+            default: 0
         }
     }
 });
+
+let seed = bip39.mnemonicToSeedSync('send invoice')
+hdwallet.initFromMasterSeed(config, seed)
 
 function getChainInfo() {
     return new Promise((resolve, reject) => {
@@ -196,6 +207,14 @@ async function signDigest(digest, key) {
     })
 }
 
+const cleos_wallet = {
+    getWalletKeyList,
+    createKey,
+    signDigest
+}
+// let wallet = cleos_wallet
+let wallet = hdwallet
+
 async function makeTransactionHeader(expireInSeconds, callback) {
     let info = await eos.getInfo({});
     chainDate = new Date(info.head_block_time + 'Z')
@@ -239,7 +258,7 @@ function makeVerifyActions(account_name, signatures) {
     return actions;
 }
 
-function makeTransferAction(account_name, inputs, outputs) {
+function makeTransferAction(account_name, inputs, outputs, memo) {
     let action = {
         account: Config.contract_info.code,
         name: 'transferutxo',
@@ -247,7 +266,7 @@ function makeTransferAction(account_name, inputs, outputs) {
             payer: account_name,
             inputs,
             outputs,
-            memo: ''
+            memo
         },
         authorization: [{
             actor: account_name,
@@ -339,7 +358,7 @@ async function getUTXOsForKey(pk) {
 }
 
 async function getOwnedUTXOs() {
-    let keys = await getWalletKeyList();
+    let keys = await wallet.getWalletKeyList();
 
     let utxos = []
 
@@ -406,7 +425,7 @@ async function loadutxo(from, to, amount) {
 
     if (to === 'new') {
         try {
-            to = await createKey()
+            to = await wallet.createKey()
             console.log(`Generated new key ${to}`)
         } catch (err) {
             console.error('ERROR: Failed to generate new key. (locked wallet?)')
@@ -450,11 +469,13 @@ async function transferutxo(to, amount, cmd) {
         return
     }
 
+    let memo = cmd.memo || ''
+
     await init();
 
     if (to === 'new') {
         try {
-            to = await createKey()
+            to = await wallet.createKey()
             console.log(`Generated new key ${to}`)
         } catch (err) {
             console.error('ERROR: Failed to generate new key. (locked wallet?)')
@@ -481,7 +502,7 @@ async function transferutxo(to, amount, cmd) {
     let change = ret[1] - amountNum
 
     if (change > 0) {
-        let changeAddress = await createKey()
+        let changeAddress = await wallet.createKey()
         outputs.push({ pk:changeAddress, account:"", quantity: `${change.toFixed(4)} PEOS` })
     }
 
@@ -505,7 +526,7 @@ async function transferutxo(to, amount, cmd) {
         let buf = Buffer.concat([int2le(u.id), outputDigest])
         let digest = sha256(buf)
 
-        let sig = await signDigest(digest, u.pk)
+        let sig = await wallet.signDigest(digest, u.pk)
         
         utxoIds.push({
             id: u.id,
@@ -515,7 +536,7 @@ async function transferutxo(to, amount, cmd) {
     
     console.assert(change >= 0, "Negative change! " + change)
 
-    let tranferAction = makeTransferAction(cmd.auth || '', utxoIds, outputs)
+    let tranferAction = makeTransferAction(cmd.auth || '', utxoIds, outputs, memo)
 
     if (cmd.auth) {
         let key = await getActiveKey(cmd.auth)
@@ -577,6 +598,63 @@ async function relayAction(auth, action) {
         })
 }
 
+async function serveRelayAction(auth) {
+    if (!auth) {
+        console.error("ERROR: No authenticating EOS account.")
+        return
+    }
+
+    await init();
+
+    let key = await getActiveKey(auth)
+    if (!key) {
+        console.error("ERROR: Can't find key for account:", auth)
+        //return
+    }
+    Config.active_public_key = key
+
+    const app = express()
+
+    app.use(function(req, res, next) {
+        res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept")
+        res.header("Access-Control-Allow-Origin", "*")
+        next();
+    });
+
+    app.post('/relay', async (req, res) => {
+        const msg = req.body
+        const action = msg.action
+
+        let actionJson
+
+        try {
+            actionJson = JSON.parse(action)
+            actionJson.data.payer = auth
+            actionJson.authorization[0].actor = auth    
+        } catch (err) {
+            console.error('ERROR: Action not valid: ', err.message)
+            return
+        }
+
+        await eos.transaction({ actions: [actionJson] })
+        .then(async (ret) => {
+            console.log('Transfer success (Id: ' + ret.transaction_id + ' )')
+        })
+        .catch((err) => {
+            console.log('ERROR: transfer failed:', err)
+        })
+
+
+    })
+
+    const port = 8080
+
+    app.listen(port, (e) => {
+        if (e) console.error(e)
+        else console.log(`Server listening on port ${port}...`)
+    });
+}
+
 async function tranferAction(from, to, amount, cmd) {
     if (from === 'utxo') {
         await transferutxo(to, amount, cmd)
@@ -587,7 +665,7 @@ async function tranferAction(from, to, amount, cmd) {
 
 async function getReceiveKey(cmd) {
     if(cmd.reuse) {
-        let keys = await getWalletKeyList();
+        let keys = await wallet.getWalletKeyList();
 
         for(let key of keys) {
             if((await getUTXOsForKey(key)).length === 0) {
@@ -596,7 +674,7 @@ async function getReceiveKey(cmd) {
         }
     }
 
-    return await createKey()
+    return await wallet.createKey()
 }
 
 async function getAllAccounts(cmd) {
@@ -663,11 +741,16 @@ async function _main() {
     .command('transfer <from> <to> <amount>')
     .option('-a, --auth <account>', 'Authenticating EOS account')
     .option('-s, --save', 'Save the transaction for later relay')
+    .option('-m, --memo <memo>', 'Memo for when sending to accounts')
     .action(tranferAction)
 
     program
     .command('relay <auth> <action>')
     .action(relayAction)
+
+    program
+    .command('serve <auth>')
+    .action(serveRelayAction)
 
     program
     .command('set <variable> <value>')
