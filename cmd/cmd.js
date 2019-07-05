@@ -246,7 +246,8 @@ function makeTransferAction(account_name, inputs, outputs) {
         data: {
             payer: account_name,
             inputs,
-            outputs
+            outputs,
+            memo: ''
         },
         authorization: [{
             actor: account_name,
