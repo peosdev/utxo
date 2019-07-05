@@ -212,8 +212,8 @@ const cleos_wallet = {
     createKey,
     signDigest
 }
-// let wallet = cleos_wallet
-let wallet = hdwallet
+let wallet = cleos_wallet
+// let wallet = hdwallet
 
 async function makeTransactionHeader(expireInSeconds, callback) {
     let info = await eos.getInfo({});
