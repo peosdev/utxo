@@ -53,6 +53,45 @@ function getAcount(account) {
     })
 }
 
+function getKeyAcount(key) {
+    let body = {
+        public_key: key
+    }
+    return new Promise((resolve, reject) => {
+        const options = {
+            method: "GET",
+            url: Config.eos_conn_info.httpEndpoint + "/v1/history/get_key_accounts",
+            body: JSON.stringify(body)
+        }
+        request(options, function (err, res, body) {
+            if (err) reject(err);
+            else resolve(JSON.parse(body).account_names);
+        })
+    })
+}
+
+function getCurrencyBalance(code, account_name, symbol) {
+
+    return new Promise((resolve, reject) => {
+        const body = {
+            account : account_name, 
+            code    : code, 
+            symbol  : symbol
+        }
+
+        const options = {
+            method: "POST",
+            url: Config.eos_conn_info.httpEndpoint + "/v1/chain/get_currency_balance",
+            body: JSON.stringify(body) 
+        }
+
+        request(options, function (err, res, body) {
+            if (err) reject(err);
+            else resolve(JSON.parse(body));
+        })
+    })
+}
+
 async function getActiveKey(account) {
     let data = await getAcount(account)
     if (!data.permissions) {
@@ -207,7 +246,8 @@ function makeTransferAction(account_name, inputs, outputs) {
         data: {
             payer: account_name,
             inputs,
-            outputs
+            outputs,
+            memo: ''
         },
         authorization: [{
             actor: account_name,
@@ -559,6 +599,33 @@ async function getReceiveKey(cmd) {
     return await createKey()
 }
 
+async function getAllAccounts(cmd) {
+    let code = cmd.code || 'eosio.token'
+    let symbol = cmd.symbol || 'EOS'
+    let exclude = (cmd.exclude || '').split(',')
+    let keys = await getWalletKeyList();
+
+    let sum = 0
+
+    for(let key of keys) {
+        let accounts = await getKeyAcount(key)
+        for(let account of accounts) {
+            if (exclude.includes(account)){
+                continue
+            }
+            let balance = await getCurrencyBalance(code, account, symbol)
+            if (balance.length == 0) {
+                balance.push(`0.0000 ${symbol}`)
+            }
+            let amount = parseFloat(balance[0].split(' ')[0])
+            sum += amount
+            console.log(account, amount, symbol)
+        }
+    }
+
+    console.log('Total:', sum)
+}
+
 async function _main() {
     program
     .version('0.1', '-v --version')
@@ -612,6 +679,15 @@ async function _main() {
     .command('get <variable> ')
     .action((variable, value, cmd)=>{
         console.log(config.get(variable))
+    })
+
+    program
+    .command('all')
+    .option('-s, --symbol <symbol>', 'Token symbol')
+    .option('-c, --code <code>', 'Token contract')
+    .option('-e, --exclude <accounts>', 'Comma separated accounts to exclude')
+    .action((cmd)=>{
+        getAllAccounts(cmd)
     })
  
     program.parse(process.argv)    
