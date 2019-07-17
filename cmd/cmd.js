@@ -8,7 +8,7 @@ const read    = require('read')
 const request = require('request')
 const Promise = require('bluebird')
 const bip39   = require('bip39')
-const Conf = require('conf');
+const Conf = require('conf')
 
 const express = require('express')
 
@@ -27,9 +27,17 @@ const config = new Conf({
         wallet_hd_index: {
             type: 'integer',
             default: 0
+        },
+        relay_key: {
+            type: 'string',
+            default: ''
+        },
+        peos_contract: {
+            type: 'string',
+            default: 'thepeostoken'
         }
     }
-});
+})
 
 let seed = bip39.mnemonicToSeedSync('send invoice')
 hdwallet.initFromMasterSeed(config, seed)
@@ -604,16 +612,19 @@ async function serveRelayAction(auth) {
         return
     }
 
-    await init();
+    Config.eos_conn_info.keyProvider = [config.get('relay_key')]
+    eos = Eos(Config.eos_conn_info);
 
     let key = await getActiveKey(auth)
     if (!key) {
         console.error("ERROR: Can't find key for account:", auth)
-        //return
+        return
     }
     Config.active_public_key = key
 
     const app = express()
+
+    app.use(express.json())
 
     app.use(function(req, res, next) {
         res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept")
@@ -622,29 +633,28 @@ async function serveRelayAction(auth) {
     });
 
     app.post('/relay', async (req, res) => {
-        const msg = req.body
-        const action = msg.action
+        const action = req.body
 
-        let actionJson
-
-        try {
-            actionJson = JSON.parse(action)
-            actionJson.data.payer = auth
-            actionJson.authorization[0].actor = auth    
-        } catch (err) {
-            console.error('ERROR: Action not valid: ', err.message)
+        if (
+            action.account !== config.get('peos_contract') ||
+            action.name !== 'transferutxo'
+        ) {
+            res.status(500).send({ error: { code: 12, message: 'Malformed transaction'}})
             return
         }
 
-        await eos.transaction({ actions: [actionJson] })
+        action.data.payer = auth
+        action.authorization[0].actor = auth
+        
+        await eos.transaction({ actions: [action] })
         .then(async (ret) => {
             console.log('Transfer success (Id: ' + ret.transaction_id + ' )')
+            res.status(200).send(ret);
         })
         .catch((err) => {
             console.log('ERROR: transfer failed:', err)
+            res.status(500).send({ error: err });
         })
-
-
     })
 
     const port = 8080

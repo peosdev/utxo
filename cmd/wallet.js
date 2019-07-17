@@ -24,11 +24,11 @@ function getWalletKeyList() {
 }
 
 function createKey() {
-    let index = config.get('wallet_hd_index') + 1
+    let index = config.get('wallet_hd_index')
 
     let pkey = getKey(index).toPublic().toString()
 
-    config.set('wallet_hd_index', index)
+    config.set('wallet_hd_index', index + 1)
 
     return pkey
 }
