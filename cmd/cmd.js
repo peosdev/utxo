@@ -35,6 +35,10 @@ const config = new Conf({
         peos_contract: {
             type: 'string',
             default: 'thepeostoken'
+        },
+        fee_per_output: {
+            type: 'number',
+            default: 100.0
         }
     }
 })
@@ -365,6 +369,38 @@ async function getUTXOsForKey(pk) {
     })
 }
 
+async function getUTXOsForId(id) {
+    return new Promise((resolve, reject) => {
+        let body = {
+            "json": true,
+            "code": Config.contract_info.code,
+            "scope": Config.contract_info.code,
+            "table": "utxos",
+            "table_key": "",
+            "lower_bound": id,
+            "upper_bound": id,
+            "limit": 1,
+            "reverse": false,
+            "show_payer": false
+        }
+        const options = {
+            method: "GET",
+            url: Config.eos_conn_info.httpEndpoint + "/v1/chain/get_table_rows",
+            body: JSON.stringify(body)
+        }
+        request(options, function (err, res, body) {
+            if (err) { reject(err); return; }
+
+            let rows = JSON.parse(body).rows
+            if (rows !== undefined) {
+                resolve(rows);
+            } else {
+                resolve([])
+            }
+        })
+    })
+}
+
 async function getOwnedUTXOs() {
     let keys = await wallet.getWalletKeyList();
 
@@ -640,6 +676,31 @@ async function serveRelayAction(auth) {
             action.name !== 'transferutxo'
         ) {
             res.status(500).send({ error: { code: 12, message: 'Malformed transaction'}})
+            return
+        }
+
+        let inputSum = 0
+        for (let utxo of action.data.inputs) {
+            let rows = await getUTXOsForId(utxo.id)
+            if (rows.length == 0) {
+                res.status(500).send({ error: { code: 11, message: 'Unknown utxo'}})
+                return
+            }
+            let amount = getAmount(rows[0].amount)
+            inputSum += amount
+        }
+
+        let outputSum = 0
+        for (let utxo of action.data.outputs) {
+            let amount = getAmount(utxo.quantity)
+            outputSum += amount
+        }
+
+        let fees = inputSum - outputSum
+        let required_fee = config.get('fee_per_output') * action.data.outputs.length
+        
+        if (fees < required_fee) {
+            res.status(403).send({ error: { code: 10, message: `Not enough fees. Transaction requires ${formatAmount(required_fee)}`}})
             return
         }
 
