@@ -352,7 +352,7 @@ async function getUTXOsForKey(pk) {
             "show_payer": false
         }
         const options = {
-            method: "GET",
+            method: "POST",
             url: Config.eos_conn_info.httpEndpoint + "/v1/chain/get_table_rows",
             body: JSON.stringify(body)
         }
@@ -384,7 +384,7 @@ async function getUTXOsForId(id) {
             "show_payer": false
         }
         const options = {
-            method: "GET",
+            method: "POST",
             url: Config.eos_conn_info.httpEndpoint + "/v1/chain/get_table_rows",
             body: JSON.stringify(body)
         }
@@ -408,9 +408,13 @@ async function getOwnedUTXOs() {
 
     for(let key of keys) {
         let ks = await getUTXOsForKey(key);
+        // if (ks.length == 0) {
+        //     ks = [{pk:key, amount:'0.0000 PEOS'}]
+        // }
         utxos = utxos.concat(ks)
     }
 
+    // console.log(utxos)
     return utxos
 }
 
